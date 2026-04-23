@@ -16,6 +16,8 @@ interface BucketInfo {
 interface QuotaStats {
 	remaining: number;
 	limit: number;
+	resetTime?: string;
+	tokenType?: string;
 }
 
 interface LoadCodeAssistResponse {
@@ -28,6 +30,16 @@ interface LoadCodeAssistResponse {
 			creditAmount: string;
 		}>;
 	};
+	releaseChannel?: {
+		type?: string;
+		name?: string;
+	};
+	paidTier?: {
+		id?: string;
+		name?: string;
+		description?: string;
+	};
+	manageSubscriptionUri?: string;
 }
 
 // --- Logic ---
@@ -46,7 +58,12 @@ function processQuotaBuckets(buckets: BucketInfo[]): Map<string, QuotaStats> {
 			remaining = Math.round(bucket.remainingFraction * limit);
 		}
 		if (!Number.isNaN(remaining) && Number.isFinite(limit)) {
-			modelQuotas.set(bucket.modelId, { remaining, limit });
+			modelQuotas.set(bucket.modelId, {
+				remaining,
+				limit,
+				resetTime: bucket.resetTime,
+				tokenType: bucket.tokenType,
+			});
 		}
 	}
 	return modelQuotas;
@@ -96,16 +113,15 @@ async function sendQuotaMessage(ctx: ExtensionContext, pi: ExtensionAPI) {
 			retrieveQuota(token, projectId).catch(() => ({})),
 		]);
 
-		const tier = "currentTier" in tierRes ? tierRes.currentTier : undefined;
 		const statsMap = "buckets" in quotaRes && quotaRes.buckets ? processQuotaBuckets(quotaRes.buckets) : new Map();
 
-		if (statsMap.size > 0 || tier) {
+		if (statsMap.size > 0 || "currentTier" in tierRes) {
 			pi.sendMessage({
 				customType: "gemini-quota",
 				content: "Gemini API Quota and Tier Information",
 				display: true,
 				details: {
-					tier,
+					tierInfo: tierRes,
 					stats: Array.from(statsMap.entries()),
 				},
 			});
@@ -121,21 +137,43 @@ export default async function geminiQuotaExtension(pi: ExtensionAPI) {
 	// 1. Register a custom message renderer to handle the visual output natively
 	pi.registerMessageRenderer("gemini-quota", (message, _opts, theme) => {
 		const details = message.details as {
-			tier?: any;
+			tierInfo?: LoadCodeAssistResponse;
 			stats?: Array<[string, QuotaStats]>;
 		};
 
 		const container = new Container();
 
-		if (details.tier) {
-			container.addChild(new Text(theme.bold(`User Tier: ${details.tier.name || "Unknown"}`), 0, 0));
-			if (details.tier.description) {
-				container.addChild(new Text(theme.fg("dim", `  ${details.tier.description}`), 0, 0));
+		if (details.tierInfo?.currentTier) {
+			const tier = details.tierInfo.currentTier;
+			container.addChild(new Text(theme.bold(`User Tier: ${tier.name || "Unknown"}`), 0, 0));
+			if (tier.description) {
+				container.addChild(new Text(theme.fg("dim", `  ${tier.description}`), 0, 0));
 			}
-			if (details.tier.availableCredits && details.tier.availableCredits.length > 0) {
-				for (const credit of details.tier.availableCredits) {
+			if (tier.availableCredits && tier.availableCredits.length > 0) {
+				for (const credit of tier.availableCredits) {
 					container.addChild(new Text(`  - ${credit.creditType}: ${credit.creditAmount}`, 0, 0));
 				}
+			}
+			if (details.tierInfo.releaseChannel) {
+				container.addChild(
+					new Text(
+						theme.bold(`Release Channel: `) +
+							`${details.tierInfo.releaseChannel.name} (${details.tierInfo.releaseChannel.type})`,
+						0,
+						0,
+					),
+				);
+			}
+			if (details.tierInfo.paidTier) {
+				container.addChild(new Text(theme.bold(`Paid Tier: `) + details.tierInfo.paidTier.name, 0, 0));
+				if (details.tierInfo.paidTier.description) {
+					container.addChild(new Text(theme.fg("dim", `  ${details.tierInfo.paidTier.description}`), 0, 0));
+				}
+			}
+			if (details.tierInfo.manageSubscriptionUri) {
+				container.addChild(
+					new Text(`${theme.bold(`Manage Subscription: `)}${details.tierInfo.manageSubscriptionUri}`, 0, 0),
+				);
 			}
 			container.addChild(new Text("", 0, 0)); // Padding
 		}
@@ -161,7 +199,11 @@ export default async function geminiQuotaExtension(pi: ExtensionAPI) {
 				const percentage = Math.round(fraction * 100)
 					.toString()
 					.padStart(3, " ");
-				const line = `${label}${bar}  ${percentage}% (${s.remaining}/${s.limit})`;
+
+				const reset = s.resetTime ? ` (Resets: ${new Date(s.resetTime).toLocaleString()})` : "";
+				const type = s.tokenType ? ` [${s.tokenType}]` : "";
+
+				const line = `${label}${bar}  ${percentage}% (${s.remaining}/${s.limit})${type}${reset}`;
 
 				container.addChild(new Text(line, 0, 0));
 			}
