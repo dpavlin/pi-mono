@@ -30,12 +30,24 @@ async function main() {
 				method: "POST",
 				headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
 				body: JSON.stringify({ cloudaicompanionProject: projectId, metadata: { ideType: "GEMINI_CLI" } }),
-			}).then(r => r.json()),
+			}).then(async r => {
+				if (!r.ok) {
+					if (r.status === 401) throw new Error("Access token expired. Please run 'pi' to refresh your credentials.");
+					throw new Error(`loadCodeAssist API Error: ${r.status} ${r.statusText}`);
+				}
+				return r.json();
+			}),
 			fetch(`${DEFAULT_ENDPOINT}/v1internal:retrieveUserQuota`, {
 				method: "POST",
 				headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
 				body: JSON.stringify({ project: projectId }),
-			}).then(r => r.json())
+			}).then(async r => {
+				if (!r.ok) {
+					if (r.status === 401) throw new Error("Access token expired. Please run 'pi' to refresh your credentials.");
+					throw new Error(`retrieveUserQuota API Error: ${r.status} ${r.statusText}`);
+				}
+				return r.json();
+			})
 		]);
 
 		if (tierRes.currentTier) {
