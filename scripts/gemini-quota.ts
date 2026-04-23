@@ -42,6 +42,12 @@ async function main() {
 			console.log("");
 			console.log(chalk.bold(" User Tier:"), tierRes.currentTier.name);
 			if (tierRes.currentTier.description) console.log(" ", chalk.gray(tierRes.currentTier.description));
+			if (tierRes.releaseChannel) console.log(chalk.bold(" Release Channel:"), `${tierRes.releaseChannel.name} (${tierRes.releaseChannel.type})`);
+			if (tierRes.paidTier) {
+				console.log(chalk.bold(" Paid Tier:"), tierRes.paidTier.name);
+				console.log(" ", chalk.gray(tierRes.paidTier.description));
+			}
+			if (tierRes.manageSubscriptionUri) console.log(chalk.bold(" Manage Subscription:"), tierRes.manageSubscriptionUri);
 		}
 
 		if (quotaRes.buckets) {
@@ -67,8 +73,10 @@ async function main() {
 				const bar = colorFn("█".repeat(filled)) + chalk.gray("░".repeat(empty));
 				const remaining = b.remainingAmount || Math.round(fraction * 100);
 				const limit = b.remainingAmount ? Math.round(Number.parseInt(b.remainingAmount) / fraction) : 100;
+				const reset = b.resetTime ? ` (Resets: ${new Date(b.resetTime).toLocaleString()})` : "";
+				const type = b.tokenType ? ` [${b.tokenType}]` : "";
 				
-				console.log(`${label}${bar}  ${Math.round(fraction * 100).toString().padStart(3)}% (${remaining}/${limit})`);
+				console.log(`${label}${bar}  ${Math.round(fraction * 100).toString().padStart(3)}% (${remaining}/${limit})${type}${reset}`);
 			}
 		}
 		console.log("");
